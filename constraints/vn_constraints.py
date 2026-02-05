@@ -28,14 +28,6 @@ def build_vn_inequalities(var_names: list[str]) -> tuple[list[str], list[list[fl
 
     caption = ["1"] + [mask_label(m) for m in masks]
 
-    def non_neg() -> list[list[float]]:
-        rows: list[list[float]] = []
-        for m in masks:
-            row = [0.0] * (1 + len(masks))
-            row[1 + index_of[m]] = 1.0
-            rows.append(row)
-        return rows
-
     def weak_monotonicity() -> list[list[float]]:
         rows: list[list[float]] = []
         for a in masks:
@@ -71,7 +63,6 @@ def build_vn_inequalities(var_names: list[str]) -> tuple[list[str], list[list[fl
         return rows
 
     array: list[list[float]] = []
-    array.extend(non_neg())
     array.extend(weak_monotonicity())
     array.extend(strong_subadditivity())
     # Enforce S(empty)=0 by substituting S(empty)=0 in all rows.
@@ -108,6 +99,21 @@ def build_vn_inequalities(var_names: list[str]) -> tuple[list[str], list[list[fl
         deduped_map[key] = key
     deduped = [list(row) for row in deduped_map.values()]
     return caption, deduped
+
+
+def build_vn_matrix(var_names: list[str]) -> tuple[list[list[float]], list[str]]:
+    """Return (M, h_caption) for basic VN inequalities M h <= 0.
+
+    The inequalities are generated from weak monotonicity (WM) and
+    strong subadditivity (SSA) over disjoint variable sets.
+    """
+    caption, array = build_vn_inequalities(var_names)
+    h_caption = caption[1:]
+    M: list[list[float]] = []
+    for row in array:
+        coeffs = row[1:]
+        M.append([-float(c) for c in coeffs])
+    return M, h_caption
 
 
 if __name__ == "__main__":
