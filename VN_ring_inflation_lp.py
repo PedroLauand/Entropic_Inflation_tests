@@ -17,7 +17,7 @@ from mosek.fusion import (
     Variable,
 )
 
-from entropy_utils import LP_test
+from entropy_utils import LP_test, build_farkas_model, solve_farkas_model
 
 
 def add_linear_equality_constraint(
@@ -140,12 +140,12 @@ if __name__ == "__main__":
     names = [
         ["A0", "B0", "C0", "A1", "B1", "C1"],
     ]
-    indep_input: list[list[str]] = []
-    separability_input = [
+    indep_input = [
         ["A0,B0", "A1,B1"],
         ["B0,C0", "B1,C1"],
         ["A0,C0", "A1,C1"],
     ]
+    separability_input: list[list[str]] = []
     symmetry_input = [
         ["A0", "A1"],
         ["B0", "B1"],
@@ -167,76 +167,58 @@ if __name__ == "__main__":
         "S(A0,C0)",
         "S(B0,C0)",
     ]
-    row_labels_A1 = [
-        "S(A1)",
-        "S(B1)",
-        "S(C1)",
-        "S(A1,B1)",
-        "S(A1,C1)",
-        "S(B1,C1)",
-    ]
     # Rays from the basic von-Neumann entropy polytope for ABC.
-    rays = [[1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 2.0, 1.0, 2.0, 2.0, 1.0], [1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0], [0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]]
-    # Drop S(A,B,C) (last col) for each copy.
-    rays_a0 = [row[:6] for row in rays]
-
-    model, x, label_to_index, labels, var_names, constraints_meta = LP_test(
-        names,
-        indep_input=indep_input,
-        separability_input=separability_input,
-        symmetry_input=symmetry_input,
-    )
-    model.acceptedSolutionStatus(AccSolutionStatus.Certificate)
-    model.setLogHandler(sys.stdout)
-    model.objective("feas_base", ObjectiveSense.Minimize, Expr.constTerm(0.0))
-    model.solve()
-    base_problem_status = model.getProblemStatus()
-    base_solution_status = model.getPrimalSolutionStatus()
-    print("base problem_status:", base_problem_status)
-    print("base solution_status:", base_solution_status)
+    # Caption order: [S(A), S(B), S(AB), S(C), S(AC), S(BC), S(ABC)]
+    rays = [
+        [1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 2.0, 1.0, 2.0, 2.0, 1.0],
+        [1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0],
+        [0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    ]
+    # Drop S(A,B,C) (last col) and reorder to match row_labels_A0:
+    # [S(A), S(B), S(C), S(AB), S(AC), S(BC)]
+    rays_a0 = [[row[0], row[1], row[3], row[2], row[4], row[5]] for row in rays]
 
     feasible_rows = []
     infeasible_rows = []
-    certificate_summaries: List[str] = []
+    tol = 1e-8
     for i, row in enumerate(rays):
         value_constraints = [
             f"{lbl}={val}" for lbl, val in zip(row_labels_A0, rays_a0[i])
-        ] + [
-            f"{lbl}={val}" for lbl, val in zip(row_labels_A1, rays_a0[i])
         ]
-        model, x, label_to_index, labels, var_names, constraints_meta = LP_test(
+        (
+            model,
+            x,
+            label_to_index,
+            labels,
+            var_names,
+            constraints_meta,
+            matrix,
+        ) = LP_test(
             names,
             indep_input=indep_input,
             separability_input=separability_input,
             symmetry_input=symmetry_input,
             value_constraints=value_constraints,
+            return_matrix=True,
         )
-        model.acceptedSolutionStatus(AccSolutionStatus.Certificate)
-        model.setLogHandler(sys.stdout)
-        model.objective("feas", ObjectiveSense.Minimize, Expr.constTerm(0.0))
-        model.solve()
-        problem_status = model.getProblemStatus()
-        solution_status = model.getPrimalSolutionStatus()
-        print(f"ray {i} problem_status:", problem_status)
-        print(f"ray {i} solution_status:", solution_status)
-        if str(problem_status) == "ProblemStatus.PrimalAndDualFeasible":
+        farkas_model, y = build_farkas_model(matrix["M"], matrix["b"])
+        obj, expr, y_vals = solve_farkas_model(
+            farkas_model, y, b_caption=matrix["b_caption"]
+        )
+        is_feasible = obj >= -tol
+        status = "feasible" if is_feasible else "infeasible"
+        print(f"ray {i} b^T y: {obj:g} -> {status}")
+        if is_feasible:
             feasible_rows.append((i, row))
         else:
             infeasible_rows.append((i, row))
-            from certificate_lp import solve_farkas_lp
-
-            A2, b2, lab2 = build_ax_leq_b_from_meta(constraints_meta, signed_labels=True)
-            cert_lp2 = solve_farkas_lp(A2, b2, labels=lab2)
-            inequality = f"{cert_lp2.expression} >= 0"
-            print(f"ray {i} signed-caption inequality: {inequality}")
-            certificate_summaries.append(f"ray {i}: {inequality}")
 
     print("feasible_rows:", feasible_rows)
     print("infeasible_rows:", infeasible_rows)
     print("feasible_count:", len(feasible_rows))
     print("infeasible_count:", len(infeasible_rows))
-    print("certificate_count:", len(certificate_summaries))
-    if certificate_summaries:
-        print("certificates:")
-        for entry in certificate_summaries:
-            print(entry)
