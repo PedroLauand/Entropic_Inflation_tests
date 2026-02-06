@@ -62,9 +62,20 @@ def build_vn_inequalities(var_names: list[str]) -> tuple[list[str], list[list[fl
                     rows.append(row)
         return rows
 
+    def nonnegativity() -> list[list[float]]:
+        rows: list[list[float]] = []
+        for m in masks:
+            if m == 0:
+                continue
+            row = [0.0] * (1 + len(masks))
+            row[1 + index_of[m]] += 1.0
+            rows.append(row)
+        return rows
+
     array: list[list[float]] = []
     array.extend(weak_monotonicity())
     array.extend(strong_subadditivity())
+    array.extend(nonnegativity())
     # Enforce S(empty)=0 by substituting S(empty)=0 in all rows.
     if 0 in index_of:
         empty_idx = 1 + index_of[0]

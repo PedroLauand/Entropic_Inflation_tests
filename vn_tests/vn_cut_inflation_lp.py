@@ -6,7 +6,12 @@ import sys
 
 from mosek.fusion import AccSolutionStatus, Expr, ObjectiveSense
 
-from entropy_utils import LP_test, build_farkas_model, solve_farkas_model
+from entropy_utils import (
+    LP_test,
+    build_farkas_model,
+    entropic_caption,
+    solve_farkas_model,
+)
 
 
 if __name__ == "__main__":
@@ -44,7 +49,17 @@ if __name__ == "__main__":
     certificate_y_summaries: dict[int, str] = {}
     tol = 1e-9
 
+    candidate_names = ["A0", "B0", "C0"]
+    candidate_caption = entropic_caption(candidate_names)
+
     for i, row in enumerate(rays_full):
+        label_to_value = dict(zip(row_labels, row))
+        candidate = []
+        for label in candidate_caption:
+            if label in label_to_value:
+                candidate.append(label_to_value[label])
+            else:
+                candidate.append("")
         (
             model,
             x,
@@ -57,8 +72,8 @@ if __name__ == "__main__":
             names,
             indep_input=indep_input,
             separability_input=separability_input,
-            row=row,
-            row_labels=row_labels,
+            candidate=candidate,
+            candidate_names=candidate_names,
             return_matrix=True,
         )
         model.acceptedSolutionStatus(AccSolutionStatus.Certificate)

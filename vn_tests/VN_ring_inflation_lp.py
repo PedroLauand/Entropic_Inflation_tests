@@ -17,7 +17,12 @@ from mosek.fusion import (
     Variable,
 )
 
-from entropy_utils import LP_test, build_farkas_model, solve_farkas_model
+from entropy_utils import (
+    LP_test,
+    build_farkas_model,
+    entropic_caption,
+    solve_farkas_model,
+)
 
 
 def add_linear_equality_constraint(
@@ -186,10 +191,17 @@ if __name__ == "__main__":
     feasible_rows = []
     infeasible_rows = []
     tol = 1e-8
+
+    candidate_names = ["A0", "B0", "C0"]
+    candidate_caption = entropic_caption(candidate_names)
     for i, row in enumerate(rays):
-        value_constraints = [
-            f"{lbl}={val}" for lbl, val in zip(row_labels_A0, rays_a0[i])
-        ]
+        label_to_value = dict(zip(row_labels_A0, rays_a0[i]))
+        candidate = []
+        for label in candidate_caption:
+            if label in label_to_value:
+                candidate.append(label_to_value[label])
+            else:
+                candidate.append("")
         (
             model,
             x,
@@ -203,7 +215,8 @@ if __name__ == "__main__":
             indep_input=indep_input,
             separability_input=separability_input,
             symmetry_input=symmetry_input,
-            value_constraints=value_constraints,
+            candidate=candidate,
+            candidate_names=candidate_names,
             return_matrix=True,
         )
         farkas_model, y = build_farkas_model(matrix["M"], matrix["b"])

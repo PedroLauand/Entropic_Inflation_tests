@@ -86,59 +86,6 @@ def add_independence_constraints(
         model.constraint(expr, Domain.equalsTo(0.0))
 
 
-def add_entropy_value_constraints(
-    model: Model,
-    x: Variable,
-    index_of: Dict[int, int],
-    var_names: Sequence[str],
-    constraints: Sequence[str] | None = None,
-    *,
-    row: Sequence[float] | None = None,
-    row_labels: Sequence[str] | None = None,
-) -> None:
-    """Add constraints of the form H(S) = value.
-
-    Provide either:
-      - constraints: strings like "H(A,B)=1", or
-      - row + row_labels: numeric row with matching labels.
-    """
-
-    def parse_constraint(s: str) -> Tuple[int, float]:
-        if "=" not in s:
-            raise ValueError(f"missing '=' in constraint: {s}")
-        left, right = s.split("=", 1)
-        left = left.strip()
-        right = right.strip()
-        if not left.startswith("H(") or not left.endswith(")"):
-            raise ValueError(f"invalid entropy label: {left}")
-        vars_part = left[2:-1]
-        if not vars_part:
-            raise ValueError("empty entropy set in constraint")
-        names = [t.strip() for t in vars_part.split(",") if t.strip()]
-        mask = 0
-        name_to_idx = {name: i for i, name in enumerate(var_names)}
-        for name in names:
-            if name not in name_to_idx:
-                raise ValueError(f"unknown variable name: {name}")
-            mask |= 1 << name_to_idx[name]
-        try:
-            value = float(right)
-        except ValueError as exc:
-            raise ValueError(f"invalid numeric value: {right}") from exc
-        return mask, value
-
-    if constraints is None:
-        if row is None or row_labels is None:
-            raise ValueError("provide constraints or (row and row_labels)")
-        if len(row) != len(row_labels):
-            raise ValueError("row and row_labels must have same length")
-        constraints = [f"{lbl}={val}" for lbl, val in zip(row_labels, row)]
-
-    for s in constraints:
-        mask, value = parse_constraint(s)
-        model.constraint(x.index(index_of[mask]), Domain.equalsTo(value))
-
-
 def add_symmetry_constraints(
     model: Model,
     x: Variable,
@@ -181,8 +128,7 @@ def build_shannon_model(
         """Entropy expression with H(∅)=0."""
         return 0.0 if mask == 0 else x.index(index_of[mask])
 
-    # Monotonicity: H(Y) - H(X) >= 0 for all X ⊆ Y.
-    # This includes H(S) >= 0 via X=∅.
+    # Monotonicity: H(Y) - H(X) >= 0 for all X ⊆ Y (including X = ∅).
     for y_mask in masks:
         sub = y_mask
         while True:
@@ -275,21 +221,28 @@ if __name__ == "__main__":
         [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0],
         [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0],
     ]
-
     feasible_rows = []
     infeasible_rows = []
     for i, row in enumerate(rays):
         model, x, index_of, names = build_shannon_model(names)
         add_independence_constraints(model, x, index_of, names, indep_input)
         add_symmetry_constraints(model, x, index_of, names, symmetry_input)
-        add_entropy_value_constraints(
-            model,
-            x,
-            index_of,
-            names,
-            row=row,
-            row_labels=row_labels,
-        )
+        constraints = [f"{lbl}={val}" for lbl, val in zip(row_labels, row)]
+        for s in constraints:
+            left, right = s.split("=", 1)
+            left = left.strip()
+            right = right.strip()
+            vars_part = left[2:-1]
+            name_to_idx = {name: i for i, name in enumerate(names)}
+            mask = 0
+            for name in vars_part.split(","):
+                name = name.strip()
+                if not name:
+                    continue
+                if name not in name_to_idx:
+                    raise ValueError(f"unknown variable name: {name}")
+                mask |= 1 << name_to_idx[name]
+            model.constraint(x.index(index_of[mask]), Domain.equalsTo(float(right)))
         model.setLogHandler(sys.stdout)
         model.objective("feas", ObjectiveSense.Minimize, Expr.constTerm(0.0))
         model.solve()

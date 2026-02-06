@@ -73,6 +73,11 @@ def _entropic_caption_from_names(names: Sequence[str]) -> List[str]:
     return caption
 
 
+def entropic_caption(names: Sequence[str]) -> List[str]:
+    """Return the standard entropic-vector caption for the given variable names."""
+    return _entropic_caption_from_names(names)
+
+
 def build_vn_inequality_matrix(
     n_or_names: Union[int, Sequence[str], Sequence[Sequence[str]]],
 ) -> Tuple[
@@ -292,68 +297,6 @@ def add_independence_constraints(
         raise ValueError(f"independence entry must have 2 or 3 items: {item}")
 
 
-def add_entropy_value_constraints(
-    model: Model,
-    x: Variable,
-    label_to_index: Dict[str, int],
-    var_names: Sequence[str],
-    constraints: Sequence[str] | None = None,
-    *,
-    row: Sequence[float] | None = None,
-    row_labels: Sequence[str] | None = None,
-    constraints_meta: List[Dict[str, object]] | None = None,
-) -> None:
-    """Add constraints of the form S(S) = value.
-
-    Provide either:
-      - constraints: strings like "S(A,B)=1", or
-      - row + row_labels: numeric row with matching labels.
-    """
-
-    def parse_constraint(s: str) -> Tuple[int, float]:
-        if "=" not in s:
-            raise ValueError(f"missing '=' in constraint: {s}")
-        left, right = s.split("=", 1)
-        left = left.strip()
-        right = right.strip()
-        if not left.startswith("S(") or not left.endswith(")"):
-            raise ValueError(f"invalid entropy label: {left}")
-        vars_part = left[2:-1]
-        if not vars_part:
-            raise ValueError("empty entropy set in constraint")
-        names = [t.strip() for t in vars_part.split(",") if t.strip()]
-        vars_ = _parse_var_set(names, var_names)
-        label = _label_for_vars(vars_, var_names)
-        try:
-            value = float(right)
-        except ValueError as exc:
-            raise ValueError(f"invalid numeric value: {right}") from exc
-        return label, value
-
-    if constraints is None:
-        if row is None or row_labels is None:
-            raise ValueError("provide constraints or (row and row_labels)")
-        if len(row) != len(row_labels):
-            raise ValueError("row and row_labels must have same length")
-        constraints = [f"{lbl}={val}" for lbl, val in zip(row_labels, row)]
-
-    for s in constraints:
-        label, value = parse_constraint(s)
-        constr = model.constraint(x.index(label_to_index[label]), Domain.equalsTo(value))
-        if constraints_meta is not None:
-            coeffs = [0.0] * len(label_to_index)
-            coeffs[label_to_index[label]] += 1.0
-            constraints_meta.append(
-                {
-                    "constraint": constr,
-                    "coeffs": coeffs,
-                    "const": -float(value),
-                    "label": label,
-                    "sense": "eq",
-                }
-            )
-
-
 def LP_test(
     names: Union[int, Sequence[str], Sequence[Sequence[str]]],
     *,
@@ -363,9 +306,6 @@ def LP_test(
     candidate: Sequence[float | int | str | None] | None = None,
     candidate_caption: Sequence[str] | None = None,
     candidate_names: Sequence[str] | None = None,
-    value_constraints: Sequence[str] | None = None,
-    row: Sequence[float] | None = None,
-    row_labels: Sequence[str] | None = None,
     return_meta: bool = True,
     return_matrix: bool = False,
 ) -> Tuple[
@@ -392,17 +332,10 @@ def LP_test(
       like "C,B" (treated as {C,B}).
     - candidate: partial entropic vector aligned with the VN caption; use None or "" for free slots.
     - candidate_names: if provided, generates the candidate caption from these names.
-    - value_constraints: list like ["S(A,B)=1", ...] OR row + row_labels.
     - return_matrix: when True, return a dict with M, b, b_caption, and x_caption.
     """
     if candidate_caption is not None and candidate_names is not None:
         raise ValueError("provide candidate_caption or candidate_names, not both")
-    if candidate is not None and (value_constraints is not None or row is not None):
-        raise ValueError("provide candidate or value_constraints/row, not both")
-    if value_constraints is not None and (row is not None or row_labels is not None):
-        raise ValueError("provide value_constraints or (row and row_labels), not both")
-    if (row is None) != (row_labels is None):
-        raise ValueError("row and row_labels must be provided together")
 
     (
         M,
@@ -531,45 +464,6 @@ def LP_test(
             if norm_label not in label_to_index:
                 raise ValueError(f"unknown entropy label in candidate caption: {label}")
             idx = label_to_index[norm_label]
-            items.append((idx, value, label))
-
-        for idx, value, label in items:
-            row_pos = [0.0] * n
-            row_pos[idx] = 1.0
-            append_leq(row_pos, value, label)
-        for idx, value, label in items:
-            row_neg = [0.0] * n
-            row_neg[idx] = -1.0
-            append_leq(row_neg, -value, f"-{label}")
-
-    if value_constraints is not None or row is not None:
-        if value_constraints is None:
-            if row is None or row_labels is None:
-                raise ValueError("provide value_constraints or (row and row_labels)")
-            if len(row) != len(row_labels):
-                raise ValueError("row and row_labels must have same length")
-            value_constraints = [f"{lbl}={val}" for lbl, val in zip(row_labels, row)]
-
-        items = []
-        for s in value_constraints:
-            if "=" not in s:
-                raise ValueError(f"missing '=' in constraint: {s}")
-            left, right = s.split("=", 1)
-            left = left.strip()
-            right = right.strip()
-            if not left.startswith("S(") or not left.endswith(")"):
-                raise ValueError(f"invalid entropy label: {left}")
-            vars_part = left[2:-1]
-            if not vars_part:
-                raise ValueError("empty entropy set in constraint")
-            names = [t.strip() for t in vars_part.split(",") if t.strip()]
-            vars_ = _parse_var_set(names, var_names)
-            label = _label_for_vars(vars_, var_names)
-            try:
-                value = float(right)
-            except ValueError as exc:
-                raise ValueError(f"invalid numeric value: {right}") from exc
-            idx = label_to_index[label]
             items.append((idx, value, label))
 
         for idx, value, label in items:

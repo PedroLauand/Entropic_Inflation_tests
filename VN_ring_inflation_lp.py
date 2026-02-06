@@ -1,1 +1,1 @@
-vn_tests/VN_ring_inflation_lp.py
+vn_tests/vn_ring_inflation_lp.py
