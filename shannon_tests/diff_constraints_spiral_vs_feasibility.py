@@ -95,6 +95,13 @@ def build_spiral_constraints_in_vetorH_order(
         ["A1", "B0,B1,C1"],
         ["B1", "C0,C1,A1"],
         ["C1", "A0,A1,B1"],
+        ["A1", "B1,C1"],
+        ["B1", "C1"],
+        ["B1", "C0,A1"],
+        ["C1", "A0,B1"],
+        ["A0", "C1"],
+        ["B0", "A1"],
+        ["C0", "B1"],
     ]
 
     def parse_vars(item: str) -> List[str]:

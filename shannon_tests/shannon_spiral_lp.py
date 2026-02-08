@@ -8,6 +8,9 @@ from typing import Dict, Iterable, List, Sequence, Tuple, Union
 import sys
 from mosek.fusion import Domain, Expr, Model, ObjectiveSense, Variable
 
+from entropy_utils import build_farkas_model, solve_farkas_model
+from shannon_tests.shannon_utils import LP_test
+
 
 def _all_masks(n: int) -> List[int]:
     return list(range(1, 1 << n))
@@ -213,6 +216,15 @@ if __name__ == "__main__":
         ["A1", "B0,B1,C1"],  # I(A1:B0,B1,C1)=0
         ["B1", "C0,C1,A1"],  # I(B1:C0,C1,A1)=0
         ["C1", "A0,A1,B1"],  # I(C1:A0,A1,B1)=0
+        # Minimal constraints for full tripartite independence of (A1,B1,C1):
+        ["A1", "B1,C1"],     # I(A1:B1,C1)=0
+        ["B1", "C1"],        # I(B1:C1)=0
+        # Extra independence equalities (from feasibility_test):
+        ["B1", "C0,A1"],     # H(C0,A1,B1) = H(C0,A1) + H(B1)
+        ["C1", "A0,B1"],     # H(A0,B1,C1) = H(A0,B1) + H(C1)
+        ["A0", "C1"],        # H(A0,C1) = H(A0) + H(C1)
+        ["B0", "A1"],        # H(B0,A1) = H(B0) + H(A1)
+        ["C0", "B1"],        # H(C0,B1) = H(C0) + H(B1)
     ]
     symmetry_input = [
         ["A0", "A1"],        # H(A0)=H(A1)
@@ -232,28 +244,22 @@ if __name__ == "__main__":
         "H(A0,B0,C0)",
     ]
     # Rays matrix for testing (each row follows row_labels order above).
+    # Generated from full Shannon constraints + array inequalities + h>=0 (10 rays).
     rays = [
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+        [1.0, 1.0, 1.0, 1.5, 1.5, 1.5, 1.5],
+        [1.0, 1.0, 2.0, 1.5, 2.5, 2.5, 2.5],
         [1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        [1.5, 1.5, 1.0, 2.5, 2.0, 2.0, 3.0],
-        [1.5, 1.0, 1.5, 2.0, 2.5, 2.0, 3.0],
-        [1.0, 1.5, 1.5, 2.0, 2.0, 2.5, 3.0],
-        [1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0],
-        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0],
-        [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 1.0, 2.0, 1.0, 2.0],
+        [1.0, 2.0, 3.0, 2.5, 3.5, 4.5, 5.5],
+        [2.0, 1.0, 3.0, 2.5, 4.5, 3.5, 5.5],
         [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0],
-        [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0],
+        [0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0],
+        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
     ]
     feasible_rows = []
     infeasible_rows = []
+    certificates: list[tuple[int, str, float]] = []
     for i, row in enumerate(rays):
         model, x, index_of, names = build_shannon_model(names)
         add_independence_constraints(model, x, index_of, names, indep_input)
@@ -285,7 +291,33 @@ if __name__ == "__main__":
             feasible_rows.append((i, row))
         else:
             infeasible_rows.append((i, row))
+            # Compute Farkas-style certificate b^T y for this ray.
+            (
+                _m2,
+                _x2,
+                _lbl2,
+                _labels2,
+                _vars2,
+                _meta2,
+                matrix,
+            ) = LP_test(
+                names,
+                indep_input=indep_input,
+                symmetry_input=symmetry_input,
+                candidate=row,
+                candidate_caption=row_labels,
+                return_matrix=True,
+            )
+            farkas_model, y = build_farkas_model(matrix["M"], matrix["b"])
+            obj, expr, _y_vals = solve_farkas_model(
+                farkas_model, y, b_caption=matrix["b_caption"]
+            )
+            certificates.append((i, expr or "0", obj))
 
     print("feasible_rows:", feasible_rows, len(feasible_rows))
     print("infeasible_rows:", infeasible_rows, len(infeasible_rows))
     print("infeasible_ray_indices:", [idx for idx, _ in infeasible_rows])
+    if certificates:
+        print("certificates (b^T y):")
+        for idx, expr, val in certificates:
+            print(f"ray {idx}: {expr} = {val:g}")

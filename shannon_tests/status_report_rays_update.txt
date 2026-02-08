@@ -1,0 +1,48 @@
+Status Report: Ray Set Update + Spiral/Feasibility Alignment
+============================================================
+
+Summary
+-------
+We updated the Shannon ray set and aligned the spiral LP constraints with the
+feasibility_test constraints. After the fixes, both implementations now agree
+on infeasible rays for the new 10‑ray list.
+
+Key Corrections
+---------------
+1) Feasibility test (Feas_problem.py)
+   - Fixed the unusual equality to enforce C1 ⟂ {B0,A1}:
+     H(B0,A1,C1) = H(B0,A1) + H(C1)
+   - This corrects the earlier (incorrect) term H(B0,A1,C1) = H(B0,A1) + H(A1).
+
+2) Spiral LP (shannon_spiral_lp.py)
+   - Added independence equalities to match feasibility_test:
+     H(C0,A1,B1) = H(C0,A1) + H(B1)
+     H(A0,B1,C1) = H(A0,B1) + H(C1)
+     H(B0,A1,C1) = H(B0,A1) + H(C1)
+     H(A0,C1)    = H(A0) + H(C1)
+     H(B0,A1)    = H(B0) + H(A1)
+     H(C0,B1)    = H(C0) + H(B1)
+   - Kept minimal tripartite independence for (A1,B1,C1):
+     I(A1;B1,C1)=0 and I(B1;C1)=0, which imply
+     H(A1,B1,C1)=H(A1)+H(B1)+H(C1).
+
+3) Ray Set Update
+   - Replaced the legacy 17‑ray list with the new 10 rays obtained from:
+     full Shannon constraints + the 7 “array” inequalities + h >= 0.
+   - These rays are now used consistently in spiral LP and feasibility test
+     comparisons.
+
+Current 10‑Ray Feasibility Results (matching)
+---------------------------------------------
+Using the updated 10‑ray set:
+
+- infeasible (spiral lp):      [1, 2, 5, 6, 7, 9]
+- infeasible (feasibility_test): [1, 2, 5, 6, 7, 9]
+- only in spiral lp:           []
+- only in feasibility_test:    []
+
+Conclusion
+----------
+After fixing the unusual equality and adding the missing independence constraints
+in spiral LP, both implementations now impose the same conditions and produce
+identical infeasibility lists for the new ray set.

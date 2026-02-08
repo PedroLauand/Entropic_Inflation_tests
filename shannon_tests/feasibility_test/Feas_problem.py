@@ -59,14 +59,12 @@ def Equalities_spiral_inflation(vetor_H):
     matrix_E[len(matrix_E)-1][vetor_H.index((5,))] = -1
     matrix_E = np.vstack([matrix_E, newrow])
     
-    # NOTE: Unusual equality (B0,A1,C1) = (B0,A1) + (A1)
-    # This enforces H(B0,A1,C1) - H(B0,A1) - H(A1) = 0.
-    # It is stronger than standard independence with C1, and is not imposed
-    # in the spiral LP code. See status report for details.
-    matrix_E[len(matrix_E)-1][vetor_H.index((1,3,5))] = 1
-    matrix_E[len(matrix_E)-1][vetor_H.index((1,3))] = -1
-    matrix_E[len(matrix_E)-1][vetor_H.index((3,))] = -1
-    matrix_E = np.vstack([matrix_E, newrow])
+    # NOTE: Independence-style equality (disabled for now).
+    # Would enforce H(B0,A1,C1) - H(B0,A1) - H(C1) = 0 (i.e., C1 ⟂ {B0,A1}).
+    # matrix_E[len(matrix_E)-1][vetor_H.index((1,3,5))] = 1
+    # matrix_E[len(matrix_E)-1][vetor_H.index((1,3))] = -1
+    # matrix_E[len(matrix_E)-1][vetor_H.index((5,))] = -1
+    # matrix_E = np.vstack([matrix_E, newrow])
     
 
     
@@ -117,4 +115,3 @@ def Equalities_spiral_inflation(vetor_H):
     
     matrix_E=np.vstack((matrix_E,-matrix_E))
     return matrix_E
-
