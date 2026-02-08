@@ -1,0 +1,89 @@
+Status Report: Shannon Tests vs Feasibility Test (Spiral)
+=========================================================
+
+Scope
+-----
+This report summarizes the current Shannon "spiral" LP implementation versus
+older feasibility_test code, with emphasis on extra constraints present only
+in feasibility_test. It also records the ray test results used for comparison.
+
+1) Feasibility Test (shannon_tests/feasibility_test)
+----------------------------------------------------
+Core entry point:
+- shannon_tests/feasibility_test/Feas_problem.py
+  - Equalities_spiral_inflation(vetor_H) builds additional equalities on top of
+    the basic Shannon inequalities (desigualdades_basicas).
+  - These equalities are encoded as inequalities and then mirrored with their
+    negatives to enforce equality.
+
+Extra constraints (not in spiral LP)
+------------------------------------
+After aligning all constraints on the same 6-variable entropic basis
+(A0,B0,C0,A1,B1,C1), the feasibility_test adds 9 extra inequality rows that are
+not present in spiral LP. These correspond to independence/equality conditions.
+
+The extra conditions are:
+1)  H(A1,B1,C1) = H(A1) + H(B1) + H(C1)
+2)  H(B0,A1,C1) = H(B0,A1) + H(A1)
+3)  H(B0,A1,C1) = H(B0,A1) + H(A1)  (same equality; enforced with both signs)
+4)  H(C0,A1,B1) = H(C0,A1) + H(B1)
+5)  H(A0,B1,C1) = H(A0,B1) + H(C1)
+6)  H(A0,C1)    = H(A0) + H(C1)
+7)  H(B0,A1)    = H(B0) + H(A1)
+8)  H(C0,B1)    = H(C0) + H(B1)
+9)  (plus the opposite-signed partner for #1 due to equality encoding)
+
+Unusual constraint
+------------------
+The most unusual equality is:
+
+  H(B0,A1,C1) = H(B0,A1) + H(A1)
+
+This is enforced directly in:
+  shannon_tests/feasibility_test/Feas_problem.py:62-65
+
+It corresponds to the following row in Equalities_spiral_inflation:
+  matrix_E[...][(1,3,5)] = 1   # H(B0,A1,C1)
+  matrix_E[...][(1,3)]   = -1  # -H(B0,A1)
+  matrix_E[...][(3,)]    = -1  # -H(A1)
+
+Since the function later stacks the negative of all rows, this is enforced as
+an equality. This is stronger than standard subadditivity or conditional
+independence and is NOT imposed in the spiral LP code.
+
+2) Spiral LP (shannon_tests/shannon_spiral_lp.py)
+-------------------------------------------------
+Spiral LP builds Shannon constraints as:
+- Monotonicity: H(Y) - H(X) >= 0 for all X ⊆ Y (including X = ∅)
+- SSA / CMI: I(A;B|C) >= 0 for all disjoint A,B,C (including C = ∅)
+- Plus specific independence constraints (3) and symmetry constraints (6)
+
+This yields the full Shannon cone (including I(X;Y) >= 0 due to C=∅), but
+it does NOT include the extra equalities from feasibility_test listed above.
+
+3) Ray Testing (Spiral LP)
+--------------------------
+The spiral LP script tests 17 rays (hardcoded in shannon_spiral_lp.py). These
+rays were originally derived from a basic_shannon set that was missing the
+unconditional I(X;Y) >= 0 constraints; this omission has since been corrected
+in the Shannon utilities. The 17-ray list remains as a legacy test set.
+
+Current spiral LP infeasible rays (by index):
+  [0, 3, 8, 9, 10, 11, 12, 15, 16]
+
+Feasibility test infeasible rays (same 17-ray list):
+  [0, 1, 3, 4, 5, 7, 8, 9, 10, 11, 12, 15, 16, 17]
+
+Difference (feasibility_test only):
+  [1, 4, 5, 7, 17]
+
+This discrepancy is explained by the extra equalities listed above.
+
+Status Summary
+--------------
+- Spiral LP uses full Shannon (monotonicity + SSA with C=∅), plus its own
+  independence and symmetry constraints.
+- Feasibility test uses basic Shannon inequalities plus a larger set of
+  equality constraints, including the unusual H(B0,A1,C1) equality.
+- These extra equalities are the source of additional infeasible rays in the
+  feasibility_test output.

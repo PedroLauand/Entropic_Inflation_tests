@@ -128,16 +128,34 @@ def build_shannon_model(
         """Entropy expression with H(∅)=0."""
         return 0.0 if mask == 0 else x.index(index_of[mask])
 
+    # Build and de-duplicate constraints before adding them to the model.
+    def add_row(rows: list[list[float]], row: list[float]) -> None:
+        rows.append(row)
+
+    def normalize(row: list[float]) -> tuple[float, ...]:
+        max_abs = max(abs(v) for v in row) if row else 0.0
+        if max_abs == 0.0:
+            return tuple(row)
+        scaled = [v / max_abs for v in row]
+        return tuple(round(v, 12) for v in scaled)
+
+    unique_rows: list[list[float]] = []
+    seen = set()
+
     # Monotonicity: H(Y) - H(X) >= 0 for all X ⊆ Y (including X = ∅).
     for y_mask in masks:
         sub = y_mask
         while True:
             x_mask = sub
             if x_mask != y_mask:
-                model.constraint(
-                    Expr.sub(H(y_mask), H(x_mask)),
-                    Domain.greaterThan(0.0),
-                )
+                coeffs = [0.0] * len(masks)
+                coeffs[index_of[y_mask]] += 1.0
+                if x_mask != 0:
+                    coeffs[index_of[x_mask]] -= 1.0
+                key = normalize(coeffs)
+                if key not in seen:
+                    seen.add(key)
+                    add_row(unique_rows, coeffs)
             if sub == 0:
                 break
             sub = (sub - 1) & y_mask
@@ -161,11 +179,24 @@ def build_shannon_model(
                     ac_mask = a_mask | c_mask
                     bc_mask = b_mask | c_mask
                     abc_mask = ab_mask | c_mask
-                    expr = Expr.sub(
-                        Expr.add(H(ac_mask), H(bc_mask)),
-                        Expr.add(H(c_mask), H(abc_mask)),
-                    )
-                    model.constraint(expr, Domain.greaterThan(0.0))
+                    coeffs = [0.0] * len(masks)
+                    coeffs[index_of[ac_mask]] += 1.0
+                    coeffs[index_of[bc_mask]] += 1.0
+                    if c_mask != 0:
+                        coeffs[index_of[c_mask]] -= 1.0
+                    coeffs[index_of[abc_mask]] -= 1.0
+                    key = normalize(coeffs)
+                    if key not in seen:
+                        seen.add(key)
+                        add_row(unique_rows, coeffs)
+
+    for coeffs in unique_rows:
+        expr = Expr.constTerm(0.0)
+        for mask, coef in zip(masks, coeffs):
+            if coef == 0.0:
+                continue
+            expr = Expr.add(expr, Expr.mul(coef, H(mask)))
+        model.constraint(expr, Domain.greaterThan(0.0))
 
     return model, x, index_of, var_names
 
@@ -257,3 +288,4 @@ if __name__ == "__main__":
 
     print("feasible_rows:", feasible_rows, len(feasible_rows))
     print("infeasible_rows:", infeasible_rows, len(infeasible_rows))
+    print("infeasible_ray_indices:", [idx for idx, _ in infeasible_rows])
