@@ -1,7 +1,28 @@
 """Calculate extreme points/rays using pycddlib (cddlib sampleh1.ine)."""
-from pprint import pprint
+from pathlib import Path
+import sys
 
 import cdd
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+try:
+    from shannon_tests.shannon_utils import build_shannon_inequality_matrix
+except ModuleNotFoundError:
+    sys.path.insert(0, str(ROOT / "shannon_tests"))
+    from shannon_utils import build_shannon_inequality_matrix
+
+STANDARD_LABELS = [
+    "H(A)",
+    "H(B)",
+    "H(C)",
+    "H(A,B)",
+    "H(A,C)",
+    "H(B,C)",
+    "H(A,B,C)",
+]
 
 
 def polytope(array: list[list[float]]) -> list[list[float]]:
@@ -48,53 +69,26 @@ if __name__ == "__main__":
         [0, -3, -3, -3, 2, 3, 2, -1],
         [0, -3, -3, -3, 2, 2, 3, -1],
     ]
-    # Basic Shannon-type inequalities (each row · h >= 0).
-    basic_shannon_array = [
-        # Nonnegativity of single entropies.
-        [0, 1, 0, 0, 0, 0, 0, 0],  # H(A) >= 0
-        [0, 0, 1, 0, 0, 0, 0, 0],  # H(B) >= 0
-        [0, 0, 0, 1, 0, 0, 0, 0],  # H(C) >= 0
-        # Conditional entropies >= 0.
-        [0, 0, -1, 0, 1, 0, 0, 0],  # H(A|B) = H(AB) - H(B) >= 0
-        [0, 0, 0, -1, 0, 1, 0, 0],  # H(A|C) = H(AC) - H(C) >= 0
-        [0, 0, 0, -1, 0, 0, 1, 0],  # H(B|C) = H(BC) - H(C) >= 0
-        [0, 0, 0, 0, 0, 0, -1, 1],  # H(A|BC) = H(ABC) - H(BC) >= 0
-        [0, 0, 0, 0, 0, -1, 0, 1],  # H(B|AC) = H(ABC) - H(AC) >= 0
-        [0, 0, 0, 0, -1, 0, 0, 1],  # H(C|AB) = H(ABC) - H(AB) >= 0
-        # Conditional mutual informations >= 0 (submodularity).
-        [0, 0, -1, 0, 1, 0, 1, -1],  # I(A;C|B) >= 0
-        [0, -1, 0, 0, 1, 1, 0, -1],  # I(B;C|A) >= 0
-        [0, 0, 0, -1, 0, 1, 1, -1],  # I(A;B|C) >= 0
-    ]
+    # Full Shannon inequalities from the builder: M h <= 0.
+    M, _b, _bcap, x_caption, _idx, _vars, _meta = build_shannon_inequality_matrix(
+        ["A", "B", "C"]
+    )
+    label_to_idx = {label: i for i, label in enumerate(x_caption)}
+    reorder = [label_to_idx[label] for label in STANDARD_LABELS]
+    shannon_rows = [[0.0] + [-row[i] for i in reorder] for row in M]
     # Generators caption (same order as h above):
     # [t, H(A), H(B), H(C), H(A,B), H(A,C), H(B,C), H(A,B,C)]
     # t = 0 -> ray (direction), t = 1 -> vertex (point)
-    constraints = array + basic_shannon_array
-    generators_basic = polytope(basic_shannon_array)
+    constraints = array + shannon_rows
     generators_constraints = polytope(constraints)
     def _rounded(row: list[float]) -> tuple[float, ...]:
         return tuple(round(x, 5) for x in row)
 
-    # Compare after rounding each entry to 5 decimal places.
-    basic_set = {_rounded(row) for row in generators_basic}
-    constraints_set = {_rounded(row) for row in generators_constraints}
-    generators = [row for row in generators_constraints if _rounded(row) not in basic_set]
-    caption = ["H(A)", "H(B)", "H(C)", "H(A,B)", "H(A,C)", "H(B,C)", "H(A,B,C)"]
+    caption = STANDARD_LABELS
+    rays = [row for row in generators_constraints if _rounded(row)[0] == 0]
 
-    only_basic = sorted(basic_set - constraints_set)
-    if only_basic:
-        print("Only in basic_shannon_array (rounded to 5 decimals):")
-        for row in only_basic:
-            t = row[0]
-            kind = "ray" if t == 0 else "extreme point"
-            values = [f"{name}={value}" for name, value in zip(caption, row[1:])]
-            print(f"{kind}: " + ", ".join(values))
-        print("")
-
-    print("All generators from constraints (rounded to 5 decimals):")
-    for row in generators_constraints:
+    print(f"Rays from constraints (rounded to 5 decimals): {len(rays)}")
+    for row in rays:
         r = _rounded(row)
-        t = r[0]
-        kind = "ray" if t == 0 else "extreme point"
         values = [f"{name}={value}" for name, value in zip(caption, r[1:])]
-        print(f"{kind}: " + ", ".join(values))
+        print("ray: " + ", ".join(values))
