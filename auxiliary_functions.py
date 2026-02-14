@@ -51,20 +51,12 @@ def marginalizacao(P, marg):
 	return P
 
 def rays_indexes(vetor_H):
-
-
-    C=np.zeros(len(vetor_H), dtype='int')\
-    
-    C[vetor_H.index((0,))] = 1
-    C[vetor_H.index((1,))] = 1
-    C[vetor_H.index((2,))] = 1
-    C[vetor_H.index((0,1))] = 1
-    C[vetor_H.index((0,2))] = 1
-    C[vetor_H.index((1,2))] = 1
-    C[vetor_H.index((0,1,2))] = 1
-
+    # Selector matrix fixing: H(A0), H(B0), H(C0), H(A0,B0), H(A0,C0), H(B0,C0), H(A0,B0,C0)
+    targets = [(0,), (1,), (2,), (0, 1), (0, 2), (1, 2), (0, 1, 2)]
+    C = np.zeros((len(targets), len(vetor_H)), dtype="int")
+    for r, tup in enumerate(targets):
+        C[r][vetor_H.index(tup)] = 1
     return C
-
 
 
 
