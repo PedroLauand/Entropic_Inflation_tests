@@ -9,13 +9,17 @@ from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 FEAS_PATH = ROOT / "shannon_tests" / "feasibility_test"
 if str(FEAS_PATH) not in sys.path:
     sys.path.insert(0, str(FEAS_PATH))
+
+DESC_PATH = FEAS_PATH / "desc_entro"
+if str(DESC_PATH) not in sys.path:
+    sys.path.insert(0, str(DESC_PATH))
 
 # Stub IPython.display if not installed (desc_entro imports it but doesn't need it here).
 if "IPython" not in sys.modules:
@@ -31,7 +35,7 @@ if "IPython" not in sys.modules:
     sys.modules["IPython.display"] = display_mod
 
 from Feas_problem import Equalities_spiral_inflation  # type: ignore
-from desc_entro.desc_entro import desigualdades_basicas  # type: ignore
+import desc_entro  # type: ignore
 from shannon_tests.shannon_utils import build_shannon_inequality_matrix
 
 
@@ -149,7 +153,7 @@ def build_spiral_constraints_in_vetorH_order(
 
 def main() -> None:
     # Feasibility constraints: A_basic + A_eq, both as <= 0
-    A_basic, vetor_H = desigualdades_basicas(6)
+    A_basic, vetor_H = desc_entro.desigualdades_basicas(6)
     A_basic = np.asarray(A_basic, dtype=float)
     A_eq = Equalities_spiral_inflation(vetor_H)
     A_feas = np.vstack([A_basic, A_eq])

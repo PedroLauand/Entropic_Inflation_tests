@@ -687,7 +687,7 @@ def _build_elemental_inequality_system(
     Dict[str, int],
     List[Dict[str, object]],
 ]:
-    from shannon_tests.feasibility_test.desc_entro.desc_entro import (
+    from shannon_tests.shannon_applications.lucas_vendor.desc_entro import (
         desigualdades_basicas,
     )
 
