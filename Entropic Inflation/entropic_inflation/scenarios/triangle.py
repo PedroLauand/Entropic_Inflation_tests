@@ -96,6 +96,94 @@ TRIANGLE_CDD_REPRESENTATIVES = [
     },
 ]
 
+TRIANGLE_CDD_ALL = [
+    {
+        "name": "type_1_ab_ac",
+        "description": "H(A,B) + H(A,C) - H(A) - H(B) - H(C) >= 0",
+        "certificate": {
+            "A": -1.0,
+            "B": -1.0,
+            "C": -1.0,
+            "A,B": 1.0,
+            "A,C": 1.0,
+        },
+    },
+    {
+        "name": "type_1_ab_bc",
+        "description": "H(A,B) + H(B,C) - H(A) - H(B) - H(C) >= 0",
+        "certificate": {
+            "A": -1.0,
+            "B": -1.0,
+            "C": -1.0,
+            "A,B": 1.0,
+            "B,C": 1.0,
+        },
+    },
+    {
+        "name": "type_1_ac_bc",
+        "description": "H(A,C) + H(B,C) - H(A) - H(B) - H(C) >= 0",
+        "certificate": {
+            "A": -1.0,
+            "B": -1.0,
+            "C": -1.0,
+            "A,C": 1.0,
+            "B,C": 1.0,
+        },
+    },
+    {
+        "name": "type_2",
+        "description": "-5 H(A) - 5 H(B) - 5 H(C) + 4 H(A,B) + 4 H(A,C) + 4 H(B,C) - 2 H(A,B,C) >= 0",
+        "certificate": {
+            "A": -5.0,
+            "B": -5.0,
+            "C": -5.0,
+            "A,B": 4.0,
+            "A,C": 4.0,
+            "B,C": 4.0,
+            "A,B,C": -2.0,
+        },
+    },
+    {
+        "name": "type_3_ab_heavy",
+        "description": "-3 H(A) - 3 H(B) - 3 H(C) + 3 H(A,B) + 2 H(A,C) + 2 H(B,C) - H(A,B,C) >= 0",
+        "certificate": {
+            "A": -3.0,
+            "B": -3.0,
+            "C": -3.0,
+            "A,B": 3.0,
+            "A,C": 2.0,
+            "B,C": 2.0,
+            "A,B,C": -1.0,
+        },
+    },
+    {
+        "name": "type_3_ac_heavy",
+        "description": "-3 H(A) - 3 H(B) - 3 H(C) + 2 H(A,B) + 3 H(A,C) + 2 H(B,C) - H(A,B,C) >= 0",
+        "certificate": {
+            "A": -3.0,
+            "B": -3.0,
+            "C": -3.0,
+            "A,B": 2.0,
+            "A,C": 3.0,
+            "B,C": 2.0,
+            "A,B,C": -1.0,
+        },
+    },
+    {
+        "name": "type_3_bc_heavy",
+        "description": "-3 H(A) - 3 H(B) - 3 H(C) + 2 H(A,B) + 2 H(A,C) + 3 H(B,C) - H(A,B,C) >= 0",
+        "certificate": {
+            "A": -3.0,
+            "B": -3.0,
+            "C": -3.0,
+            "A,B": 2.0,
+            "A,C": 2.0,
+            "B,C": 3.0,
+            "A,B,C": -1.0,
+        },
+    },
+]
+
 
 def triangle_problem() -> InflationProblem:
     """Return the no-inflation triangle problem used in the first examples."""
@@ -208,6 +296,30 @@ def triangle_cdd_representatives(
 
     translated: List[Dict[str, object]] = []
     for item in TRIANGLE_CDD_REPRESENTATIVES:
+        certificate = {
+            ",".join(name_map[token] for token in key.split(",")): value
+            for key, value in item["certificate"].items()
+        }
+        translated.append(
+            {
+                "name": item["name"],
+                "description": item["description"],
+                "certificate": certificate,
+            }
+        )
+    return translated
+
+
+def triangle_cdd_inequalities(
+    problem: InflationProblem | None = None,
+) -> List[Dict[str, object]]:
+    """Return all seven triangle CDD inequalities in readable public labels."""
+    if problem is None:
+        problem = triangle_problem()
+    name_map = triangle_observed_name_map(problem)
+
+    translated: List[Dict[str, object]] = []
+    for item in TRIANGLE_CDD_ALL:
         certificate = {
             ",".join(name_map[token] for token in key.split(",")): value
             for key, value in item["certificate"].items()
