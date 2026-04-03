@@ -57,3 +57,6 @@ classify the candidate triangle rays in the same way:
 - infeasible rays: `[1, 2, 3]`
 
 Observed-only spiral examples remain available as historical comparisons.
+
+This README was updated once more to verify that authenticated pushes from this
+machine now work through the normal Git remote configuration.
