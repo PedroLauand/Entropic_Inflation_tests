@@ -4,7 +4,6 @@ import sys
 sys.path.append('..')
 np.set_printoptions(threshold=sys.maxsize)
 #port time
-from IPython.display import display
 
 import itertools as itt
 

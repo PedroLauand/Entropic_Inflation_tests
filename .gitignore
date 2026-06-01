@@ -3,3 +3,17 @@ __pycache__/
 .venv311/
 .DS_Store
 *.pyc
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+mainNotes.bib
+notesNotes.bib
+overleaf/*.pdf
