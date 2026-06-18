@@ -21,6 +21,8 @@ def _build_elemental_shannon_cone_cached(n: int):
 
 
 def _build_elemental_shannon_cone_uncached(n: int, M=None):
+    # Coordinates of the entropy vector: one per non-empty subset of the n
+    # variables, ordered by ascending cardinality then lexicographically.
     if M is None:
         x = np.arange(n)
         comb = [list(itt.combinations(x.tolist(), i)) for i in range(1, n + 1)]
@@ -34,14 +36,24 @@ def _build_elemental_shannon_cone_uncached(n: int, M=None):
     data: list[int] = []
     linha = 0
 
+    # Elemental form, part 1: H(X_k | rest) >= 0, i.e. H(all) - H(all\{k}) <= 0.
     for k in range(n):
         elemento = tuple(np.arange(n))
         condicao = tuple(i for i in range(n) if i != k)
-        rows.extend((linha, linha))
-        cols.extend((index[elemento], index[condicao]))
-        data.extend((-1, 1))
+        if condicao:
+            rows.extend((linha, linha))
+            cols.extend((index[elemento], index[condicao]))
+            data.extend((-1, 1))
+        else:
+            # n == 1: the conditioning set is empty (H(empty)=0 is not a
+            # coordinate), so the row is simply H(X) >= 0.
+            rows.append(linha)
+            cols.append(index[elemento])
+            data.append(-1)
         linha += 1
 
+    # Elemental form, part 2: I(X_k ; X_l | X_C) >= 0 for every pair (k, l) and
+    # every conditioning subset C of the remaining variables (including empty).
     for k in range(n):
         for l in range(k + 1, n):
             cond_rest = [i for i in range(n) if i not in {k, l}]
@@ -71,8 +83,3 @@ def _build_elemental_shannon_cone_uncached(n: int, M=None):
         dtype=np.int8,
     )
     return matriz_desig, vetor_H
-
-
-def desigualdades_basicas(n: int, M=None):
-    """Backward-compatible alias for the elemental Shannon cone builder."""
-    return build_elemental_shannon_cone(n, M=M)

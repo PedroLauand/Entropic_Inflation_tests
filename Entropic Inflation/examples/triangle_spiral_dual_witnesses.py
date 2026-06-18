@@ -22,21 +22,24 @@ from entropic_inflation import (
     triangle_spiral_problem,
 )
 
-PER_RAY_TIMEOUT_SECONDS = 90
+PER_RAY_TIMEOUT_SECONDS = 180
 
 
 def _solve_ray(queue: Queue, values: dict[str, float]) -> None:
     lp = InflationLP(triangle_spiral_problem(), include_latents=True)
     lp.set_values(values)
-    result = lp.solve_result(include_farkas_certificate=True)
+    result = lp.solve_result()
     payload: dict[str, Any] = {
         "is_feasible": result.is_feasible,
         "problem_status": result.problem_status,
         "solution_status": result.solution_status,
     }
     if not result.is_feasible:
-        payload["witness_string"] = lp.certificate_as_string(chop_tol=1e-9, round_decimals=3)
-        payload["witness_coeffs"] = lp.certificate_as_dict(chop_tol=1e-9, round_decimals=3)
+        # Solve the Farkas dual exactly once; derive both the coefficient dict
+        # and the printed string from it (recomputing the dual is expensive).
+        coeffs = lp.certificate_as_dict(chop_tol=1e-9, round_decimals=3)
+        payload["witness_coeffs"] = coeffs
+        payload["witness_string"] = _format_inequality(coeffs)
     queue.put(payload)
 
 
@@ -114,7 +117,7 @@ if __name__ == "__main__":
             continue
 
         print(f"ray {idx:>2}: infeasible")
-        print(f"        raw certificate: {payload['witness_string']}")
+        print(f"        witness: {payload['witness_string']}")
         witnesses[idx] = payload["witness_coeffs"]
 
     if witnesses:

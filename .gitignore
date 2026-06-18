@@ -4,6 +4,10 @@ __pycache__/
 .DS_Store
 *.pyc
 
+# Jupyter / Anaconda editor artifacts
+.ipynb_checkpoints/
+anaconda_projects/
+
 # LaTeX build artifacts
 *.aux
 *.bbl

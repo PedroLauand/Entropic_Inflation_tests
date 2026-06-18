@@ -43,7 +43,7 @@ class InflationLP:
         self,
         inflationproblem: InflationProblem,
         *,
-        include_latents: bool = False,
+        include_latents: bool = True,
         candidate: NamedVector | None = None,
         objective: NamedVector | None = None,
         objective_sense: str = "min",
@@ -71,12 +71,7 @@ class InflationLP:
         self.extra_equalities: List[Dict[str, float]] = []
         self.extra_inequalities: List[Dict[str, float]] = []
         self.objective: Dict[str, float] = {}
-        self.maximize = objective_sense.strip().lower() in {
-            "max",
-            "maximum",
-            "maximize",
-            "maximise",
-        }
+        # self.maximize is set by the set_objective(...) call below.
         self.objective_constant = float(objective_constant)
         self.objective_name = objective_name
         self.model: Model | None = None
@@ -263,8 +258,9 @@ class InflationLP:
         else:
             for item in which:
                 self.reset(item)
-        if which != "objective":
-            self._mark_model_dirty()
+        # Always rebuild on the next solve: even an objective-only reset must
+        # reach the live model (otherwise the stale objective is re-solved).
+        self._mark_model_dirty()
         collect()
 
     def solve(self) -> None:
@@ -361,7 +357,7 @@ class InflationLP:
         )
         if not cert:
             return "0 >= 0"
-        return _dict_to_string(cert) + " >= 0"
+        return _signed_terms(cert) + " >= 0"
 
     def farkas_certificate(self, *, bound: float = 1.0, tol: float = 1e-9) -> FarkasCertificate:
         objective_value, expression, multipliers = _solve_farkas_certificate(
@@ -408,6 +404,35 @@ def _build_elemental_problem(
     extra_equalities: Sequence[NamedVector] | None,
     extra_inequalities: Sequence[NamedVector] | None,
 ) -> tuple[Model, Variable, Dict[str, int], List[str], Dict[str, object]]:
+    """Assemble the entropic LP ``M h <= b`` and wrap it in a MOSEK model.
+
+    The decision vector ``h`` has one coordinate per non-empty subset of the
+    inflated variables (the joint entropies). The rows of ``M`` collect every
+    constraint of the cone; equalities are encoded as two opposite ``<=`` rows.
+    The constraint families, in the order added here, are:
+
+    1. **Elemental Shannon inequalities** (the base matrix from
+       :func:`_build_elemental_inequality_system`): non-negativity of every
+       conditional entropy and conditional mutual information.
+    2. **Causal independencies** (``independencies``): the local Markov
+       relations of the inflated DAG, e.g. ``I(A1 ; A2 | b1, c1) = 0``. For
+       root sources (no parents) these reduce to the mutual independence of
+       the inflated sources, so the joint source-independence family is
+       subsumed here.
+    3. **Observable factorization equalities** (``factorization_equalities``,
+       observed-only mode): additive splits ``H(union) = sum H(block)`` for
+       subsets whose inflated supports are disconnected.
+    4. **Copy-symmetry equalities**: identically distributed copies share
+       entropies. In manual mode these come from matching
+       :meth:`entropic_subset_signature`; in automatic mode from the
+       ``symmetry_generators`` permutations.
+
+    The remaining blocks pin the problem to a specific query: ``candidate``
+    fixes observed entropies to a ray, ``lower/upper_bounds`` and the
+    ``extra_*`` lists add user constraints. Every row carries a ``b_caption``;
+    the captions of the pinned coordinates are what let the Farkas dual be read
+    off natively in the observed-entropy basis.
+    """
     (
         M,
         b,
@@ -442,11 +467,14 @@ def _build_elemental_problem(
         append_leq(entries, 0.0, caption)
         append_leq({col: -value for col, value in entries.items()}, 0.0, caption)
 
+    # Family 2: causal (in)dependencies of the inflated DAG, written as
+    # vanishing (conditional) mutual informations.
     if independencies:
         for item in independencies:
             entries = _independence_entries(item, variable_names, label_to_index)
             append_eq(entries)
 
+    # Family 3: observable factorization equalities (observed-only mode).
     if factorization_equalities is not None:
         for subset in tuple_caption:
             subset_labels = tuple(variable_names[i] for i in subset)
@@ -462,6 +490,10 @@ def _build_elemental_problem(
                 entries[index] = entries.get(index, 0.0) + 1.0
             append_eq(entries)
 
+    # Family 4: copy-symmetry equalities for identically distributed copies.
+    # Manual mode groups subsets by their ancestral-subgraph signature; every
+    # subset in a class is forced to the same entropy as the class
+    # representative.
     if inflationproblem.inflation_mode == "manual":
         symmetry_classes: Dict[tuple, List[str]] = {}
         for subset in tuple_caption:
@@ -485,6 +517,7 @@ def _build_elemental_problem(
                         label_to_index[image_label]: -1.0,
                     }
                 )
+    # Automatic mode: the same family 4 expressed via permutation generators.
     elif symmetry_generators:
         for mapping in symmetry_generators:
             for subset in tuple_caption:
@@ -507,6 +540,10 @@ def _build_elemental_problem(
                     }
                 )
 
+    # Query pinning: fix chosen observed entropies to the candidate ray. Each
+    # value becomes a pair of opposite inequalities whose captions (``label``
+    # and ``-label``) survive into the Farkas dual, so the resulting witness is
+    # expressed directly in the observed-entropy basis.
     if candidate:
         for spec, value in candidate.items():
             label = str(spec)
@@ -783,6 +820,10 @@ def _clean_coefficients(
 
 
 def _dict_to_string(coeffs: Mapping[str, float]) -> str:
+    # Internal serialisation used to build Farkas expressions that are later
+    # parsed back by `_expression_to_dict` (which splits on " + "), so the
+    # " + " separator and signed coefficients here must stay in lock-step with
+    # that parser. For human-facing output use `_signed_terms` instead.
     if not coeffs:
         return "0"
     parts = []
@@ -792,6 +833,21 @@ def _dict_to_string(coeffs: Mapping[str, float]) -> str:
             continue
         parts.append(f"{coef:g}*{label}")
     return " + ".join(parts) if parts else "0"
+
+
+def _signed_terms(coeffs: Mapping[str, float]) -> str:
+    """Human-facing linear expression with clean signs, e.g. ``-2*H(A) + 3*H(A,B)``."""
+    items = [
+        (label, float(coeffs[label]))
+        for label in sorted(coeffs)
+        if abs(float(coeffs[label])) >= 1e-12
+    ]
+    if not items:
+        return "0"
+    parts = [f"{items[0][1]:g}*{items[0][0]}"]
+    for label, coef in items[1:]:
+        parts.append(f" {'-' if coef < 0 else '+'} {abs(coef):g}*{label}")
+    return "".join(parts)
 
 
 def _split_top_level_commas(text: str) -> List[str]:
@@ -814,12 +870,3 @@ def _split_top_level_commas(text: str) -> List[str]:
     if token:
         parts.append(token)
     return parts
-
-
-def _parse_objective_sense(sense: str) -> ObjectiveSense:
-    normalized = sense.strip().lower()
-    if normalized in {"min", "minimum", "minimize", "minimise"}:
-        return ObjectiveSense.Minimize
-    if normalized in {"max", "maximum", "maximize", "maximise"}:
-        return ObjectiveSense.Maximize
-    raise ValueError("objective_sense must be 'min' or 'max'")

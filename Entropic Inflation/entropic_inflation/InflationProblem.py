@@ -12,7 +12,7 @@ specific internals. The class owns:
 - inflation-level metadata
 - inflation-copy index generation
 
-The entropic LP semantics built on top of this object will be added later.
+The entropic LP built on top of this object lives in ``entropic_inflation.lp``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import warnings
 from collections import defaultdict
 from functools import cached_property
 from itertools import chain, combinations_with_replacement
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Sequence, Tuple, Union
 from warnings import warn
 
 import networkx as nx
@@ -984,23 +984,6 @@ class InflationProblem:
             return independencies
 
         return independencies
-
-    def _inflated_descendants(
-        self,
-        label: str,
-        *,
-        allowed: dict[str, int],
-    ) -> set[str]:
-        seen: set[str] = set()
-        stack = list(reversed(self.inflated_node_children.get(label, ())))
-        while stack:
-            current = stack.pop()
-            if current in seen:
-                continue
-            if current in allowed:
-                seen.add(current)
-            stack.extend(reversed(self.inflated_node_children.get(current, ())))
-        return seen
 
     def factorization_blocks(self, labels: Sequence[str]) -> tuple[tuple[str, ...], ...]:
         """Return disconnected inflation-support components for observable labels."""

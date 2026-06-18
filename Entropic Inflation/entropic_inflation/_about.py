@@ -1,14 +1,23 @@
 import platform
 
-from numpy import __version__ as numpy_version
-from scipy import __version__ as scipy_version
-from sympy import __version__ as sympy_version
-
 from ._version import __version__
 
 
 def about() -> None:
-    """Display package and dependency versions for entropic_inflation."""
+    """Display package and dependency versions for entropic_inflation.
+
+    Dependency versions are imported lazily inside this function so that
+    importing the package never fails on account of an optional reporting
+    dependency being absent.
+    """
+    from numpy import __version__ as numpy_version
+    from scipy import __version__ as scipy_version
+
+    try:
+        from sympy import __version__ as sympy_version
+    except ImportError:
+        sympy_version = "Not installed"
+
     try:
         from mosek import Env
 
