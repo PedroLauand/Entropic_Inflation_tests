@@ -63,6 +63,132 @@ token_counting / color_matching (dim, angles)  ->  p(a,b,c)     [coherent_strate
                                                ->  triangle inequalities + Eq. (4)  [entropic_vector / parent LP]
 ```
 
+## Walkthrough: building `p(a,b,c)` from scratch
+
+This reconstructs every distribution from first principles and names the exact
+function for each step, so you can audit the code rather than trust it.
+Everything lives in four small files: `triangle_probability.py` (engine),
+`coherent_strategies.py` (the strategies), `entropic_vector.py` (entropies),
+`validate_strategies.py` (independent checks).
+
+### Step 0 — the network and the Born rule
+Three parties `A, B, C`, three sources `α, β, γ`, wired so each source feeds two
+parties and each party is fed by two sources:
+
+```
+α → (B, C)        A measures (β, γ)
+β → (A, C)        B measures (α, γ)
+γ → (A, B)        C measures (α, β)
+```
+
+Source `s` emits a bipartite state `ρ_s` (one half to each child); party `X`
+applies a POVM `{M_X^x}` to its two halves. The observed distribution is
+
+```
+p(a,b,c) = Tr[ (M_A^a ⊗ M_B^b ⊗ M_C^c) (ρ_α ⊗ ρ_β ⊗ ρ_γ) ].
+```
+
+### Step 1 — the contraction engine (`triangle_probability.py`)
+There are six wires (source–party links): `α_B, α_C, β_A, β_C, γ_A, γ_B`. Each
+carries a bra and a ket index (dimension `dim`), shared between the source that
+emits it and the party that measures it. `triangle_probability_distribution`
+does the whole trace in one `einsum`:
+
+```
+"ABab, CDcd, EFef, xceCE, yafAF, zbdBD -> xyz"
+  ρ_α   ρ_β   ρ_γ   M_A    M_B    M_C
+```
+
+Index dictionary (lowercase = ket, uppercase = bra):
+
+| wire | letters | appears in source | appears in party |
+|---|---|---|---|
+| α_B | a / A | ρ_α | M_B |
+| α_C | b / B | ρ_α | M_C |
+| β_A | c / C | ρ_β | M_A |
+| β_C | d / D | ρ_β | M_C |
+| γ_A | e / E | ρ_γ | M_A |
+| γ_B | f / F | ρ_γ | M_B |
+
+Each wire's two letters occur exactly twice — once in its source, once in its
+party — so summing them *is* the trace above. You can verify the wiring against
+the DAG by reading each operator: `M_A = xceCE` touches `β_A (c,C)` and
+`γ_A (e,E)` — exactly A's two sources; `ρ_α = ABab` touches `α_B (A,a)` and
+`α_C (B,b)` — exactly α's two children. `x,y,z` are the free outputs → `p[x,y,z]`.
+Each `ρ_s`, `M_X^x` is a 4-index `(bra, bra, ket, ket)` tensor from
+`reshape_state` / `stack_povm`, subsystems in alphabetical source order.
+
+### Step 2 — the measurement (`coherent_strategies.py`)
+Every measurement is built identically:
+
+1. `givens_rotation(m, angles)` — a real `SO(m)` matrix, a product of plane
+   rotations with one angle per `(i<j)` plane (`m(m-1)/2` total). For `m=2`,
+   angle θ: `[[cosθ, −sinθ], [sinθ, cosθ]]`.
+2. `block_measurement(blocks, dim, angles)` — `blocks` is an ordered list of
+   `(label, [computational indices])` that **partition** `range(dim²)`. For each
+   block of size `m`, take `O = givens_rotation(m, angles[label])` (identity if
+   no angle supplied) and emit `m` kets = the columns of `O` placed on that
+   block's indices; the POVM element is `|ket⟩⟨ket|`.
+
+Completeness is automatic: the blocks partition the space and each `O` is
+orthonormal, so `Σ M = I` (checked in `validate_strategies.py`).
+
+### Step 3 — Token Counting
+- **Source** `uniform_token_source(dim)`: `(Σₖ |k, η−k⟩)/√dim`, `η = dim−1`. For
+  `dim=2` this is `(|01⟩+|10⟩)/√2` — one token shared between the two recipients.
+- **Sectors** `token_counting_blocks(dim)`: the two-register indices grouped by
+  total count `n = k₁+k₂`. For `dim=2`: `n=0→{|00⟩}`, `n=1→{|01⟩,|10⟩}`,
+  `n=2→{|11⟩}`. The end sectors are frozen (1-dim); the middle ones carry coherence.
+- **Qubit example** `token_counting(2, {1:[θ]})`: the `n=1` block gets `SO(2)`
+  angle θ → outcomes `cosθ|01⟩+sinθ|10⟩` and `−sinθ|01⟩+cosθ|10⟩`. Setting
+  `θ=arccos(u)` reproduces Renou et al. (arXiv:1905.04902 Eq. (2)) up to the
+  single-qubit relabeling `I⊗X`. `validate_strategies.py` builds Renou's basis
+  `{|01⟩,|10⟩, u|00⟩+v|11⟩, v|00⟩−u|11⟩}` independently and checks both give the
+  same `p(a,b,c)` and that it obeys Renou's Eqs. (3),(4),(5).
+
+*Checkable:* `token_counting(2, {1:[arccos√0.8]})` → `H(A)=2.0000,
+H(AB)=3.5871, H(ABC)=3.9119`, Eq. (4) slack `+7.7688`; and Renou Eq. (4) gives
+`P(χ₀, up, down) = u²/8 = 0.1`.
+
+### Step 4 — Color Matching
+- **Source** `maximally_entangled_state(dim)`: `|Φ_d⟩=(Σ_c|cc⟩)/√dim` — both
+  connected parties receive the *same* colour.
+- **Sectors** `color_matching_blocks(dim)`: `dim` frozen singletons `|cc⟩`
+  (report the matched colour) + the upper `{|ij⟩:i<j}` and lower `{|ij⟩:i>j}`
+  mismatch blocks, each of size `dim(dim−1)/2`, each given a real `SO(m)` rotation.
+- **`H(A)=2log₂dim` exactly**: a party's two registers are each one half of a
+  maximally entangled pair (reduced state `I/dim`) from *independent* sources, so
+  its joint state is `I/dim²`; every POVM element is rank-1, so all `dim²`
+  outcomes are equiprobable. (Independent of the angles — a robust check.)
+- **`dim=2` is classical**: the mismatch blocks are 1-dimensional, so there is
+  nothing to rotate and CM reduces to the computational measurement.
+
+### Step 5 — the B-swap (do not skip)
+The basis vectors are not symmetric under exchanging a party's two registers, so
+the construction needs a consistent cyclic `A→B→C` orientation. Party B stores
+its two subsystems in reverse order, so its POVM is transposed on those two legs
+(`swap_povm_qubits`); `_triangle` contracts `M, swap(M), M`. This is
+**load-bearing** — dropping it changes `p(a,b,c)` by up to ~0.075 and breaks the
+match with Renou (same fix the EJM example uses).
+
+### Step 6 — entropy vector and Eq. (4) (`entropic_vector.py`)
+From `p[a,b,c]`: marginals are axis sums (`p.sum(axis=…)`), and `shannon_entropy`
+is `−Σ p log₂ p` over nonzero entries. `triangle_entropic_vector` returns the
+seven `H(A),…,H(A,B,C)`; `spiral_slack` evaluates
+
+```
+slack = 7[H(AB)+H(AC)+H(BC)] − 8[H(A)+H(B)+H(C)] − 5 H(ABC).
+```
+
+### Verify it yourself
+```bash
+PYTHONPATH=. python examples/quantum_nonclassicality/validate_strategies.py
+```
+confirms: Renou Eqs. (3),(4),(5) hold; the core TC qubit equals an independent
+Renou build to ~1e-16; CM is real, a complete POVM, `H(A)=2log₂dim`. For a
+*fully* independent re-derivation, build the six-wire global statevector by hand
+(without `triangle_probability`), contract, and compare — that matches to <1e-14.
+
 ## Files
 
 | File | Role |
