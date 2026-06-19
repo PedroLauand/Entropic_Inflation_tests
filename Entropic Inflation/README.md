@@ -274,11 +274,9 @@ whether probability-level nonlocality leaves a Shannon-entropic signature. See
 | `quantum_nonclassicality/triangle_probability.py` | builds `p(a,b,c)` from states + POVMs (any dimension) |
 | `quantum_nonclassicality/entropic_vector.py` | `p(a,b,c)` → entropy vector + cheap inequality pre-screen |
 | `quantum_nonclassicality/triangle_ejm_sanity.py` | end-to-end EJM check (entropically classical → feasible) |
-| `quantum_nonclassicality/triangle_token_counting.py` | Token-Counting strategy for any token number `η` (source dim `d=η+1`); qubit case reproduces arXiv:1905.04902 Eqs. (3)–(5). `describe_tuning(η)` lists the free angles |
-| `quantum_nonclassicality/triangle_token_counting_entropy.py` | `p(a,b,c)` → entropy vector → triangle inequalities + Eq. (4); confirms output scaling `d²` outcomes/party, `d⁶` entries |
-| `quantum_nonclassicality/triangle_renou_dimension_comparison.py` | Eq. (4) slack for qubit/qutrit/ququart side by side |
-| `quantum_nonclassicality/triangle_renou_optimize.py` | minimise the Eq. (4) slack over the measurement angles (d=2,3,4) — finds the classical facet, no violation |
-| `quantum_nonclassicality/triangle_color_matching.py` | Color-Matching strategy by colour number `d`: coarse (`d+1` outcomes) and refined (`d²`; the coherent/nonlocal version for `d≥3` — at `d=2` it reduces to the decohered, classical measurement) |
+| `quantum_nonclassicality/coherent_strategies.py` | **the generator** — `token_counting(dim, angles)` and `color_matching(dim, angles)` on one shared block-diagonal real-rotation core (`angles=None` = decohered baseline). TC qubit reproduces arXiv:1905.04902; CM uses real off-diagonal rotations (coherent for `d≥3`) |
+| `quantum_nonclassicality/validate_strategies.py` | checks vs the papers (Renou Eqs. (3)–(5), CM real/complete, `H(A)=2log₂d`) + Eq. (4) survey across dimensions, with the output scaling `d²`/`d⁶` |
+| `quantum_nonclassicality/optimize_angles.py` | minimise the Eq. (4) slack over the measurement angles (either family) — finds the classical facet, no violation |
 
 ---
 
