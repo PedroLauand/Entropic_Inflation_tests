@@ -44,16 +44,50 @@ Only the **source** and the **sector partition** differ:
 | **Token-Counting (TC)** | uniform token state `Σₖ\|k, η−k⟩/√dim` (`η = dim−1`) | grouped by total count `n = k₁+k₂` |
 | **Color-Matching (CM)** | maximally entangled `\|Φ_d⟩ = Σ_c\|cc⟩/√dim` | `dim` matched-colour singletons `\|cc⟩` + the upper/lower mismatch blocks |
 
-```python
-from coherent_strategies import token_counting, color_matching, describe, random_angles
-
-p = token_counting(dim=2, angles={1: [0.4636]})        # qubit; reproduces Renou Eq. (2)
-p = color_matching(dim=3, angles={'upper': [...], 'lower': [...]})   # qutrit, real rotations
-describe('CM', 3)                                       # list the rotatable sectors + #angles
-```
-
 - **TC**: the qubit case (`dim=2`) reproduces Renou et al. Eqs. (3)–(5) exactly.
 - **CM**: rotations are **real** (the papers fix the off-diagonal coefficients real; the basis is otherwise free). The matched-colour outcomes `|cc⟩` are reported verbatim; coherence lives in the off-diagonal mismatch blocks. CM is coherent only for `dim ≥ 3` — at `dim=2` the mismatch blocks are 1-dimensional, so CM reduces to the classical computational measurement.
+
+## Quick start
+
+```python
+import numpy as np
+from coherent_strategies import (
+    token_counting, color_matching,   # strategy  -> p(a,b,c)
+    entropy_vector, eq4_slack,        # p(a,b,c)  -> 7 entropies / Eq. (4) slack
+    describe, angle_layout, n_angles, random_angles,
+)
+
+# Token-Counting qubit (reproduces Renou): one SO(2) angle in the count-1 sector
+p = token_counting(dim=2, angles={1: [np.arccos(np.sqrt(0.8))]})
+entropy_vector(p)        # {'A': 2.0, 'A,B': 3.5871, ..., 'A,B,C': 3.9119}
+eq4_slack(p)             # +7.7688   (>= 0: Eq. (4) satisfied)
+
+# Color-Matching qutrit with random real off-diagonal rotations
+rng = np.random.default_rng(0)
+p = color_matching(dim=3, angles=random_angles('CM', 3, rng))
+eq4_slack(p)             # some value >= 0
+
+describe('CM', 3)        # prints the source + rotatable sectors and #angles each
+```
+
+`angles` is a dict `{sector_label: [Givens angles]}`; omitted sectors default to
+the identity (decohered baseline). The labels are the counts `n` for TC and
+`'upper'` / `'lower'` for CM — use `angle_layout(family, dim)` to see them.
+
+| call | returns |
+|------|---------|
+| `token_counting(dim, angles=None)` | `p[a,b,c]` (TC; `angles=None` → decohered) |
+| `color_matching(dim, angles=None)` | `p[a,b,c]` (CM; real rotations) |
+| `entropy_vector(p)` | dict of the seven entropies `H(A),…,H(A,B,C)` |
+| `eq4_slack(p)` | spiral inequality Eq. (4) slack (`≥ 0` = satisfied) |
+| `describe(family, dim)` | print the source + rotatable sectors |
+| `angle_layout(family, dim)` | list of `(label, sector_dim, n_angles)` |
+| `n_angles(family, dim)` | total number of free angles |
+| `random_angles(family, dim, rng)` | a random `angles` dict for exploration |
+
+The two core builders underneath are `givens_rotation(m, angles)` (real `SO(m)`)
+and `block_measurement(blocks, dim, angles)` (the block-diagonal POVM); `family`
+is `"TC"` or `"CM"`.
 
 ## Pipeline
 
